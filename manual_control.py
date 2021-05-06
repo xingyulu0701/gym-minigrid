@@ -56,6 +56,9 @@ def key_handler(event):
     if event.key == 'up':
         step(env.actions.forward)
         return
+    if event.key == 'down':
+        step(env.actions.back)
+        return
 
     # Spacebar
     if event.key == ' ':

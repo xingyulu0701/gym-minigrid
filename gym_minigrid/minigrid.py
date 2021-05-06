@@ -465,19 +465,17 @@ class Grid:
 
         # Overlay the agent on top
         if agent_dir is not None:
-            tri_fn = point_in_triangle(
-                (0.12, 0.19),
-                (0.87, 0.50),
-                (0.12, 0.81),
+            tri_fn = point_in_circle(
+                0.50, 0.50, 0.40
             )
 
             # Rotate the agent based on its direction
             tri_fn = rotate_fn(tri_fn, cx=0.5, cy=0.5, theta=0.5*math.pi*agent_dir)
             fill_coords(img, tri_fn, (255, 0, 0))
 
-        # Highlight the cell if needed
-        if highlight:
-            highlight_img(img)
+        # # Highlight the cell if needed
+        # if highlight:
+        #     highlight_img(img)
 
         # Downsample the image to perform supersampling/anti-aliasing
         img = downsample(img, subdivs)
@@ -631,16 +629,17 @@ class MiniGridEnv(gym.Env):
         left = 0
         right = 1
         forward = 2
+        back = 3
 
         # Pick up an object
-        pickup = 3
+        pickup = 4
         # Drop an object
-        drop = 4
+        drop = 5
         # Toggle/activate an object
-        toggle = 5
+        toggle = 6
 
         # Done completing task
-        done = 6
+        done = 7
 
     def __init__(
         self,
@@ -650,7 +649,8 @@ class MiniGridEnv(gym.Env):
         max_steps=100,
         see_through_walls=False,
         seed=1337,
-        agent_view_size=7
+        agent_view_size=7,
+        obs_space=None
     ):
         # Can't set both grid_size and width/height
         if grid_size:
@@ -665,22 +665,24 @@ class MiniGridEnv(gym.Env):
         self.action_space = spaces.Discrete(len(self.actions))
 
         # Number of cells (width and height) in the agent view
-        assert agent_view_size % 2 == 1
-        assert agent_view_size >= 3
-        self.agent_view_size = agent_view_size
+        # self.agent_view_size = agent_view_size
+        assert grid_size, "A grid size needs to be provided"
+        self.agent_view_size = grid_size
 
         # Observations are dictionaries containing an
         # encoding of the grid and a textual 'mission' string
-        self.observation_space = spaces.Box(
-            low=0,
-            high=255,
-            shape=(self.agent_view_size, self.agent_view_size, 3),
-            dtype='uint8'
-        )
-        self.observation_space = spaces.Dict({
-            'image': self.observation_space
-        })
-
+        if obs_space is None:
+            self.observation_space = spaces.Box(
+                low=0,
+                high=255,
+                shape=(self.agent_view_size, self.agent_view_size, 3),
+                dtype='uint8'
+            )
+            self.observation_space = spaces.Dict({
+                'image': self.observation_space
+            })
+        else:
+            self.observation_space = obs_space
         # Range of possible rewards
         self.reward_range = (0, 1)
 
@@ -1036,29 +1038,31 @@ class MiniGridEnv(gym.Env):
         Note: the bottom extent indices are not included in the set
         """
 
-        # Facing right
-        if self.agent_dir == 0:
-            topX = self.agent_pos[0]
-            topY = self.agent_pos[1] - self.agent_view_size // 2
-        # Facing down
-        elif self.agent_dir == 1:
-            topX = self.agent_pos[0] - self.agent_view_size // 2
-            topY = self.agent_pos[1]
-        # Facing left
-        elif self.agent_dir == 2:
-            topX = self.agent_pos[0] - self.agent_view_size + 1
-            topY = self.agent_pos[1] - self.agent_view_size // 2
-        # Facing up
-        elif self.agent_dir == 3:
-            topX = self.agent_pos[0] - self.agent_view_size // 2
-            topY = self.agent_pos[1] - self.agent_view_size + 1
-        else:
-            assert False, "invalid agent direction"
+        # # Facing right
+        # if self.agent_dir == 0:
+        #     topX = self.agent_pos[0]
+        #     topY = self.agent_pos[1] - self.agent_view_size // 2
+        # # Facing down
+        # elif self.agent_dir == 1:
+        #     topX = self.agent_pos[0] - self.agent_view_size // 2
+        #     topY = self.agent_pos[1]
+        # # Facing left
+        # elif self.agent_dir == 2:
+        #     topX = self.agent_pos[0] - self.agent_view_size + 1
+        #     topY = self.agent_pos[1] - self.agent_view_size // 2
+        # # Facing up
+        # elif self.agent_dir == 3:
+        #     topX = self.agent_pos[0] - self.agent_view_size // 2
+        #     topY = self.agent_pos[1] - self.agent_view_size + 1
+        # else:
+        #     assert False, "invalid agent direction"
+        
+        # botX = topX + self.agent_view_size
+        # botY = topY + self.agent_view_size
+        
+        # return (topX, topY, botX, botY)
 
-        botX = topX + self.agent_view_size
-        botY = topY + self.agent_view_size
-
-        return (topX, topY, botX, botY)
+        return (0, 0, self.agent_view_size - 1, self.agent_view_size - 1)
 
     def relative_coords(self, x, y):
         """
@@ -1108,18 +1112,18 @@ class MiniGridEnv(gym.Env):
         # Get the contents of the cell in front of the agent
         fwd_cell = self.grid.get(*fwd_pos)
 
-        # Rotate left
-        if action == self.actions.left:
-            self.agent_dir -= 1
-            if self.agent_dir < 0:
-                self.agent_dir += 4
-
-        # Rotate right
-        elif action == self.actions.right:
-            self.agent_dir = (self.agent_dir + 1) % 4
-
-        # Move forward
-        elif action == self.actions.forward:
+        if action in [self.actions.forward, self.actions.left, self.actions.right, self.actions.back]:
+            if action == self.actions.forward:
+                self.agent_dir = 3
+            elif action == self.actions.left:
+                self.agent_dir = 2
+            elif action == self.actions.back:
+                self.agent_dir = 1
+            elif action == self.actions.right:
+                self.agent_dir = 0
+            # self.agent_dir = int(action)
+            fwd_pos = self.front_pos
+            fwd_cell = self.grid.get(*fwd_pos)
             if fwd_cell == None or fwd_cell.can_overlap():
                 self.agent_pos = fwd_pos
             if fwd_cell != None and fwd_cell.type == 'goal':
@@ -1127,6 +1131,26 @@ class MiniGridEnv(gym.Env):
                 reward = self._reward()
             if fwd_cell != None and fwd_cell.type == 'lava':
                 done = True
+    
+        # # Rotate left
+        # if action == self.actions.left:
+        #     self.agent_dir -= 1
+        #     if self.agent_dir < 0:
+        #         self.agent_dir += 4
+
+        # # Rotate right
+        # elif action == self.actions.right:
+        #     self.agent_dir = (self.agent_dir + 1) % 4
+
+        # # Move forward
+        # elif action == self.actions.forward:
+        #     if fwd_cell == None or fwd_cell.can_overlap():
+        #         self.agent_pos = fwd_pos
+        #     if fwd_cell != None and fwd_cell.type == 'goal':
+        #         done = True
+        #         reward = self._reward()
+        #     if fwd_cell != None and fwd_cell.type == 'lava':
+        #         done = True
 
         # Pick up an object
         elif action == self.actions.pickup:
@@ -1169,19 +1193,17 @@ class MiniGridEnv(gym.Env):
         cells the agent can actually see.
         """
 
+        # OVERRIDE THIS FOR FULL VIEW
         topX, topY, botX, botY = self.get_view_exts()
-
         grid = self.grid.slice(topX, topY, self.agent_view_size, self.agent_view_size)
-
-        for i in range(self.agent_dir + 1):
-            grid = grid.rotate_left()
+        grid = grid.rotate_left()
 
         # Process occluders and visibility
         # Note that this incurs some performance cost
-        if not self.see_through_walls:
-            vis_mask = grid.process_vis(agent_pos=(self.agent_view_size // 2 , self.agent_view_size - 1))
-        else:
-            vis_mask = np.ones(shape=(grid.width, grid.height), dtype=np.bool)
+        # if not self.see_through_walls:
+        #     vis_mask = grid.process_vis(agent_pos=(self.agent_view_size // 2 , self.agent_view_size - 1))
+        # else:
+        vis_mask = np.ones(shape=(grid.width, grid.height), dtype=np.bool)
 
         # Make it so the agent sees what it's carrying
         # We do this by placing the carried object at the agent's position
@@ -1203,6 +1225,12 @@ class MiniGridEnv(gym.Env):
 
         # Encode the partially observable view into a numpy array
         image = grid.encode(vis_mask)
+
+        x, y = self.agent_pos
+
+        # THIS OVERRIDES LOCKER ROOM
+        image[:, :, 2] = np.zeros_like(image[:, :, 2])
+        image[y, self.width - 1 - x, 2] = 1
 
         assert hasattr(self, 'mission'), "environments must define a textual mission string"
 
@@ -1235,7 +1263,7 @@ class MiniGridEnv(gym.Env):
 
         return img
 
-    def render(self, mode='human', close=False, highlight=True, tile_size=TILE_PIXELS):
+    def render(self, mode='human', close=False, highlight=False, tile_size=TILE_PIXELS):
         """
         Render the whole-grid human view
         """
